@@ -1121,6 +1121,53 @@ long_jokes = false
             self.logger.error(f"Error reconnecting radio: {e}")
             return False
 
+    async def _probe_radio_health(self) -> bool:
+        """Send a lightweight get_time() probe to verify the radio is responding.
+
+        A connected serial transport does not guarantee the firmware is alive and
+        processing commands.  This probe detects the 'zombie connection' state
+        where the port is open and messages are received but all outgoing commands
+        time out with no_event_received.
+
+        Increments _radio_fail_count on each failed probe and calls
+        reconnect_radio() once the configured threshold is reached.
+
+        Returns True if the device responded, False otherwise.
+        """
+        if not self.meshcore or not self.meshcore.is_connected:
+            return False
+        try:
+            from meshcore.events import EventType
+            result = await asyncio.wait_for(
+                self.meshcore.commands.get_time(), timeout=10.0
+            )
+            if result.type == EventType.ERROR:
+                self._radio_fail_count = getattr(self, '_radio_fail_count', 0) + 1
+                threshold = self.config.getint('Bot', 'radio_probe_fail_threshold', fallback=3)
+                self.logger.warning(
+                    f"Radio health probe failed "
+                    f"({self._radio_fail_count}/{threshold}): no response to get_time"
+                )
+                if self._radio_fail_count >= threshold:
+                    self.logger.error(
+                        "Radio unresponsive after %d consecutive failed probes — "
+                        "triggering reconnect",
+                        self._radio_fail_count,
+                    )
+                    self._radio_fail_count = 0
+                    await self.reconnect_radio()
+                return False
+            if getattr(self, '_radio_fail_count', 0) > 0:
+                self.logger.info("Radio health probe recovered — resetting fail counter")
+            self._radio_fail_count = 0
+            return True
+        except asyncio.TimeoutError:
+            self.logger.warning("Radio health probe timed out")
+            return False
+        except Exception as e:
+            self.logger.warning(f"Radio health probe error: {e}")
+            return False
+
     async def set_radio_clock(self) -> bool:
         """Set radio clock if device time is earlier than system time.
 
@@ -1422,6 +1469,16 @@ long_jokes = false
                             self.web_viewer_integration.restart_viewer()
                         except (AttributeError, TypeError) as e:
                             print(f"Web viewer health check failed: {e}")
+
+                # Periodically probe radio responsiveness
+                if not hasattr(self, '_last_radio_probe'):
+                    self._last_radio_probe = time.time()
+                probe_interval = self.config.getint(
+                    'Bot', 'radio_probe_interval_seconds', fallback=300
+                )
+                if time.time() - self._last_radio_probe >= probe_interval:
+                    self._last_radio_probe = time.time()
+                    asyncio.create_task(self._probe_radio_health())
 
                 # Periodically update system health in database (every 30 seconds)
                 if not hasattr(self, '_last_health_update'):
