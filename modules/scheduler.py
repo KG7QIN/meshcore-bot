@@ -4,6 +4,7 @@ Message scheduler functionality for the MeshCore Bot
 Handles scheduled messages and timing
 """
 
+import asyncio
 import datetime
 import json
 import os
@@ -325,7 +326,11 @@ class MessageScheduler:
             except Exception as e:
                 self.logger.warning(f"Error fetching mesh info for scheduled message: {e}. Sending message as-is.")
 
-        await self.bot.command_manager.send_channel_message(channel, message)
+        send_timeout = self.bot.config.getint('Bot', 'send_timeout_seconds', fallback=30)
+        await asyncio.wait_for(
+            self.bot.command_manager.send_channel_message(channel, message),
+            timeout=send_timeout,
+        )
 
     def start(self):
         """Start the scheduler in a separate thread"""

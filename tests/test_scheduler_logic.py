@@ -1370,6 +1370,48 @@ class TestSendIntervalAdvertAsyncFixed:
 class TestSendScheduledMessageAsyncTimeout:
     """Tests for _send_scheduled_message_async() asyncio.wait_for wrapping (PR2)."""
 
+    def test_success_calls_send_channel_message(self, mock_logger):
+        sched = _make_sched_with_logger(mock_logger)
+        sched.bot.command_manager.send_channel_message = AsyncMock(return_value=None)
+
+        asyncio.run(sched._send_scheduled_message_async("#general", "hello"))
+
+        sched.bot.command_manager.send_channel_message.assert_awaited_once_with(
+            "#general", "hello"
+        )
+
+    def test_timeout_raises_asyncio_timeout_error(self, mock_logger):
+        sched = _make_sched_with_logger(mock_logger)
+
+        async def run():
+            async def fake_wait_for(coro, timeout):
+                raise asyncio.TimeoutError()
+
+            with patch("asyncio.wait_for", side_effect=fake_wait_for):
+                await sched._send_scheduled_message_async("#general", "hello")
+
+        with pytest.raises(asyncio.TimeoutError):
+            asyncio.run(run())
+
+    def test_send_timeout_seconds_config_used(self, mock_logger):
+        """send_timeout_seconds from config is passed to wait_for."""
+        sched = _make_sched_with_logger(mock_logger)
+        sched.bot.config.set("Bot", "send_timeout_seconds", "45")
+        sched.bot.command_manager.send_channel_message = AsyncMock(return_value=None)
+
+        captured_timeout = []
+
+        async def spy_wait_for(coro, timeout):
+            captured_timeout.append(timeout)
+            return await coro
+
+        async def run():
+            with patch("asyncio.wait_for", side_effect=spy_wait_for):
+                await sched._send_scheduled_message_async("#general", "hello")
+
+        asyncio.run(run())
+        assert captured_timeout == [45]
+
     def test_send_scheduled_message_logs_exception_type_name(self, mock_logger):
         """Error log must include type(e).__name__."""
         from concurrent.futures import TimeoutError as FuturesTimeoutError
