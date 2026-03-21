@@ -137,7 +137,7 @@ class MessageScheduler:
             try:
                 future.result(timeout=60)  # 60 second timeout
             except Exception as e:
-                self.logger.error(f"Error sending scheduled message: {e}")
+                self.logger.error(f"Error sending scheduled message: {type(e).__name__}: {e}", exc_info=True)
         else:
             # Fallback: create new event loop if main loop not available
             try:

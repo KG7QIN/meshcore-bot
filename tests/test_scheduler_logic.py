@@ -1322,3 +1322,33 @@ class TestSendIntervalAdvertAsyncFixed:
         assert call_args_list, "logger.error was never called"
         logged = str(call_args_list[0])
         assert "TimeoutError" in logged
+
+
+# ---------------------------------------------------------------------------
+# _send_scheduled_message_async (PR2 fix — asyncio.wait_for wrapping)
+# ---------------------------------------------------------------------------
+
+
+class TestSendScheduledMessageAsyncTimeout:
+    """Tests for _send_scheduled_message_async() asyncio.wait_for wrapping (PR2)."""
+
+    def test_send_scheduled_message_logs_exception_type_name(self, mock_logger):
+        """Error log must include type(e).__name__."""
+        from concurrent.futures import TimeoutError as FuturesTimeoutError
+
+        sched = _make_sched_with_logger(mock_logger)
+
+        future_mock = MagicMock()
+        future_mock.result = MagicMock(side_effect=FuturesTimeoutError())
+
+        loop_mock = MagicMock()
+        loop_mock.is_running.return_value = True
+        sched.bot.main_event_loop = loop_mock
+
+        with patch("asyncio.run_coroutine_threadsafe", return_value=future_mock):
+            sched.send_scheduled_message("#general", "hello")
+
+        call_args_list = mock_logger.error.call_args_list
+        assert call_args_list, "logger.error was never called"
+        logged = str(call_args_list[0])
+        assert "TimeoutError" in logged
