@@ -1300,6 +1300,44 @@ def _make_sched_with_logger(mock_logger):
 class TestSendIntervalAdvertAsyncFixed:
     """Tests for MessageScheduler._send_interval_advert_async() (PR2 fix)."""
 
+    def test_error_event_raises_runtime_error(self, mock_logger):
+        from meshcore.events import EventType
+
+        sched = _make_sched_with_logger(mock_logger)
+        error_event = MagicMock()
+        error_event.type = EventType.ERROR
+        error_event.payload = {"reason": "no_event_received"}
+        sched.bot.meshcore.commands.send_advert = AsyncMock(return_value=error_event)
+
+        with pytest.raises(RuntimeError, match="send_advert failed"):
+            asyncio.run(sched._send_interval_advert_async())
+
+    def test_error_event_includes_reason_in_message(self, mock_logger):
+        from meshcore.events import EventType
+
+        sched = _make_sched_with_logger(mock_logger)
+        error_event = MagicMock()
+        error_event.type = EventType.ERROR
+        error_event.payload = {"reason": "no_event_received"}
+        sched.bot.meshcore.commands.send_advert = AsyncMock(return_value=error_event)
+
+        with pytest.raises(RuntimeError, match="no_event_received"):
+            asyncio.run(sched._send_interval_advert_async())
+
+    def test_ok_event_logs_success(self, mock_logger):
+        from meshcore.events import EventType
+
+        sched = _make_sched_with_logger(mock_logger)
+        ok_event = MagicMock()
+        ok_event.type = EventType.OK
+        sched.bot.meshcore.commands.send_advert = AsyncMock(return_value=ok_event)
+
+        asyncio.run(sched._send_interval_advert_async())
+
+        sched.bot.logger.info.assert_called_with(
+            "Interval-based flood advert sent successfully"
+        )
+
     def test_send_interval_advert_logs_exception_type_name(self, mock_logger):
         """Error log must include type(e).__name__ so blank TimeoutError is visible."""
         from concurrent.futures import TimeoutError as FuturesTimeoutError

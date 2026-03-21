@@ -639,12 +639,12 @@ class MessageScheduler:
 
     async def _send_interval_advert_async(self):
         """Send an interval-based advert (async implementation)"""
-        try:
-            # Use the same advert functionality as the manual advert command
-            await self.bot.meshcore.commands.send_advert(flood=True)
-            self.logger.info("Interval-based flood advert sent successfully")
-        except Exception as e:
-            self.logger.error(f"Error sending interval-based advert: {e}")
+        from meshcore.events import EventType
+        result = await self.bot.meshcore.commands.send_advert(flood=True)
+        if result.type == EventType.ERROR:
+            reason = result.payload.get('reason', 'unknown')
+            raise RuntimeError(f"send_advert failed: {reason}")
+        self.logger.info("Interval-based flood advert sent successfully")
 
     async def _process_channel_operations(self):
         """Process pending channel operations from the web viewer"""
