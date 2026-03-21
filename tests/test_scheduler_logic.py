@@ -631,7 +631,7 @@ class TestDbBackupIntervalGuard:
 # ---------------------------------------------------------------------------
 
 
-class TestFormatEmailBody:
+class TestFormatEmailBodyPure:
     """Tests for _format_email_body — pure string builder."""
 
     def setup_method(self):
@@ -1281,3 +1281,44 @@ class TestCollectEmailStats:
         assert result.get("contacts_total") == 50
         assert result.get("contacts_24h") == 10
         assert result.get("contacts_new_24h") == 3
+
+
+# ---------------------------------------------------------------------------
+# _send_interval_advert_async (PR2 fix — Event-based error detection)
+# ---------------------------------------------------------------------------
+
+
+def _make_sched_with_logger(mock_logger):
+    """Return a MessageScheduler backed by a mock bot with the given logger."""
+    bot = Mock()
+    bot.logger = mock_logger
+    bot.config = ConfigParser()
+    bot.config.add_section("Bot")
+    return MessageScheduler(bot)
+
+
+class TestSendIntervalAdvertAsyncFixed:
+    """Tests for MessageScheduler._send_interval_advert_async() (PR2 fix)."""
+
+    def test_send_interval_advert_logs_exception_type_name(self, mock_logger):
+        """Error log must include type(e).__name__ so blank TimeoutError is visible."""
+        from concurrent.futures import TimeoutError as FuturesTimeoutError
+
+        sched = _make_sched_with_logger(mock_logger)
+
+        future_mock = MagicMock()
+        future_mock.result = MagicMock(side_effect=FuturesTimeoutError())
+
+        loop_mock = MagicMock()
+        loop_mock.is_running.return_value = True
+        sched.bot.main_event_loop = loop_mock
+
+        with patch("asyncio.run_coroutine_threadsafe", return_value=future_mock):
+            sched.send_interval_advert()
+
+        # The error log must include the class name, not just str(e) which
+        # would be empty for concurrent.futures.TimeoutError
+        call_args_list = mock_logger.error.call_args_list
+        assert call_args_list, "logger.error was never called"
+        logged = str(call_args_list[0])
+        assert "TimeoutError" in logged

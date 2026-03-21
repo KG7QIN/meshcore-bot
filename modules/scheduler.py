@@ -625,7 +625,7 @@ class MessageScheduler:
             try:
                 future.result(timeout=60)  # 60 second timeout
             except Exception as e:
-                self.logger.error(f"Error sending interval advert: {e}")
+                self.logger.error(f"Error sending interval advert: {type(e).__name__}: {e}", exc_info=True)
         else:
             # Fallback: create new event loop if main loop not available
             try:
