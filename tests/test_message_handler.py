@@ -1544,3 +1544,181 @@ class TestGetPathFromRfData:
             assert nodes is None
         except (ValueError, UnboundLocalError):
             pass  # expected — source-level bug causes exception to propagate
+# ---------------------------------------------------------------------------
+# handle_new_contact — out_path_hash_mode flood-sentinel fix (PR3)
+# ---------------------------------------------------------------------------
+
+
+class TestHandleNewContactOutPathHashMode:
+    """Verify that out_path_hash_mode is reset to 0 when RF path data is applied.
+
+    The bug: out_path_len was updated from RF correlation data but
+    out_path_hash_mode was left at -1 (flood sentinel), causing
+    OverflowError when meshcore encoded the field as an unsigned byte.
+    """
+
+    import asyncio as _asyncio
+
+    def _make_handler(self, bot):
+        return MessageHandler(bot)
+
+    def _make_bot(self, mock_logger):
+        import configparser
+        bot = Mock()
+        bot.logger = mock_logger
+        bot.config = configparser.ConfigParser()
+        bot.config.add_section("Bot")
+        bot.config.set("Bot", "enabled", "true")
+        bot.config.set("Bot", "rf_data_timeout", "15.0")
+        bot.config.set("Bot", "message_correlation_timeout", "10.0")
+        bot.config.set("Bot", "enable_enhanced_correlation", "true")
+        bot.config.set("Bot", "auto_manage_contacts", "false")
+        bot.config.add_section("Channels")
+        bot.config.set("Channels", "respond_to_dms", "true")
+        bot.connection_time = None
+        bot.prefix_hex_chars = 2
+        bot.command_manager = Mock()
+        bot.command_manager.monitor_channels = ["general"]
+        bot.command_manager.is_user_banned = Mock(return_value=False)
+        bot.command_manager.commands = {}
+        return bot
+
+    def _make_event(self, contact_data: dict):
+        """Build a mock NEW_CONTACT event."""
+        event = Mock()
+        event.payload = dict(contact_data)
+        return event
+
+    def test_path_hash_mode_reset_when_path_present(self, mock_logger):
+        """Branch 1: path_hex truthy + path_length > 0 → out_path_hash_mode set to 0."""
+        import asyncio
+        bot = self._make_bot(mock_logger)
+        handler = self._make_handler(bot)
+
+        # Contact comes in with flood sentinel values
+        event = self._make_event({
+            "name": "TestNode",
+            "public_key": "aabbccdd11223344",
+            "out_path_len": -1,
+            "out_path_hash_mode": -1,
+        })
+
+        # RF data with a real path
+        rf_entry = {
+            "routing_info": {
+                "path_hex": "deadbeef",
+                "path_length": 2,
+                "bytes_per_hop": 1,
+            }
+        }
+        bot.message_handler = Mock()
+        bot.message_handler.recent_rf_data = [rf_entry]
+
+        # Stub out downstream calls
+        bot.repeater_manager = Mock()
+        bot.repeater_manager._is_repeater_device = Mock(return_value=True)
+        bot.repeater_manager.track_contact_advertisement = AsyncMock(return_value=None)
+        bot.repeater_manager.check_and_auto_purge = AsyncMock(return_value=None)
+
+        asyncio.run(handler.handle_new_contact(event))
+
+        bot.repeater_manager.track_contact_advertisement.assert_awaited_once()
+        passed_data = bot.repeater_manager.track_contact_advertisement.call_args[0][0]
+        assert passed_data["out_path_hash_mode"] == 0, (
+            f"Expected out_path_hash_mode=0, got {passed_data.get('out_path_hash_mode')}"
+        )
+        assert passed_data["out_path_len"] == 2
+        assert passed_data["out_path"] == "deadbeef"
+
+    def test_path_hash_mode_reset_when_path_length_zero(self, mock_logger):
+        """Branch 2: path_length == 0 → out_path_hash_mode set to 0."""
+        import asyncio
+        bot = self._make_bot(mock_logger)
+        handler = self._make_handler(bot)
+
+        event = self._make_event({
+            "name": "DirectNode",
+            "public_key": "aabbccdd11223344",
+            "out_path_hash_mode": -1,
+        })
+
+        rf_entry = {
+            "routing_info": {
+                "path_hex": "",
+                "path_length": 0,
+                "bytes_per_hop": 1,
+            }
+        }
+        bot.message_handler = Mock()
+        bot.message_handler.recent_rf_data = [rf_entry]
+
+        bot.repeater_manager = Mock()
+        bot.repeater_manager._is_repeater_device = Mock(return_value=True)
+        bot.repeater_manager.track_contact_advertisement = AsyncMock(return_value=None)
+        bot.repeater_manager.check_and_auto_purge = AsyncMock(return_value=None)
+
+        asyncio.run(handler.handle_new_contact(event))
+
+        bot.repeater_manager.track_contact_advertisement.assert_awaited_once()
+        passed_data = bot.repeater_manager.track_contact_advertisement.call_args[0][0]
+        assert passed_data["out_path_hash_mode"] == 0, (
+            f"Expected out_path_hash_mode=0, got {passed_data.get('out_path_hash_mode')}"
+        )
+        assert passed_data["out_path_len"] == 0
+        assert passed_data["out_path"] == ""
+
+    def test_existing_out_path_is_not_overwritten(self, mock_logger):
+        """When contact_data already has a non-empty out_path, RF data is not applied."""
+        import asyncio
+        bot = self._make_bot(mock_logger)
+        handler = self._make_handler(bot)
+
+        event = self._make_event({
+            "name": "AlreadyRouted",
+            "public_key": "aabbccdd11223344",
+            "out_path": "cafebabe",
+            "out_path_len": 2,
+            "out_path_hash_mode": 0,
+        })
+
+        rf_entry = {
+            "routing_info": {
+                "path_hex": "11223344",
+                "path_length": 4,
+                "bytes_per_hop": 1,
+            }
+        }
+        bot.message_handler = Mock()
+        bot.message_handler.recent_rf_data = [rf_entry]
+
+        bot.repeater_manager = Mock()
+        bot.repeater_manager._is_repeater_device = Mock(return_value=True)
+        bot.repeater_manager.track_contact_advertisement = AsyncMock(return_value=None)
+        bot.repeater_manager.check_and_auto_purge = AsyncMock(return_value=None)
+
+        asyncio.run(handler.handle_new_contact(event))
+
+        passed_data = bot.repeater_manager.track_contact_advertisement.call_args[0][0]
+        # Original path should be preserved
+        assert passed_data["out_path"] == "cafebabe"
+        assert passed_data["out_path_len"] == 2
+
+    def test_no_rf_data_does_not_crash(self, mock_logger):
+        """No recent RF data → method completes without error."""
+        import asyncio
+        bot = self._make_bot(mock_logger)
+        handler = self._make_handler(bot)
+
+        event = self._make_event({
+            "name": "Ghost",
+            "public_key": "aabbccdd11223344",
+        })
+        bot.message_handler = Mock()
+        bot.message_handler.recent_rf_data = []
+
+        bot.repeater_manager = Mock()
+        bot.repeater_manager._is_repeater_device = Mock(return_value=True)
+        bot.repeater_manager.track_contact_advertisement = AsyncMock(return_value=None)
+        bot.repeater_manager.check_and_auto_purge = AsyncMock(return_value=None)
+
+        asyncio.run(handler.handle_new_contact(event))

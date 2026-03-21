@@ -2864,10 +2864,12 @@ class MessageHandler:
                                 if path_hex and path_length > 0:
                                     contact_data['out_path'] = path_hex
                                     contact_data['out_path_len'] = path_length
+                                    contact_data['out_path_hash_mode'] = 0  # reset flood sentinel (-1)
                                     contact_data['out_bytes_per_hop'] = routing_info.get('bytes_per_hop', 1)
                                 elif path_length == 0:
                                     contact_data['out_path'] = ''
                                     contact_data['out_path_len'] = 0
+                                    contact_data['out_path_hash_mode'] = 0  # reset flood sentinel (-1)
 
                             # Update mesh graph with this NEW_CONTACT event's path information
                             # This captures public keys for edges that we might not see in regular message paths
