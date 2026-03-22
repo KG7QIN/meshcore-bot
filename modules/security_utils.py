@@ -16,6 +16,9 @@ from urllib.parse import urlparse
 
 logger = logging.getLogger('MeshCoreBot.Security')
 
+# CGN (Carrier-Grade NAT) network 100.64.0.0/10 - RFC 6598
+_CGN_NETWORK = ipaddress.ip_network("100.64.0.0/10")
+
 
 def _is_nix_environment() -> bool:
     """
@@ -42,13 +45,19 @@ def _is_nix_environment() -> bool:
     return bool(any(var in os.environ for var in nix_env_vars))
 
 
-def validate_external_url(url: str, allow_localhost: bool = False, timeout: float = 2.0) -> bool:
+def validate_external_url(
+    url: str,
+    allow_private: bool = False,
+    allow_loopback: bool | None = None,  # Deprecated: use allow_private=True instead
+    timeout: float = 2.0
+) -> bool:
     """
     Validate that URL points to safe external resource (SSRF protection)
 
     Args:
         url: URL to validate
-        allow_localhost: Whether to allow localhost/private IPs (default: False)
+        allow_private: Whether to allow private/internal IPs (default: False)
+        allow_loopback: Deprecated alias for allow_private
         timeout: DNS resolution timeout in seconds (default: 2.0)
 
     Returns:
@@ -56,6 +65,10 @@ def validate_external_url(url: str, allow_localhost: bool = False, timeout: floa
 
     Raises:
         ValueError: If URL is invalid or unsafe
+
+    Note:
+        - allow_loopback=True only permits loopback addresses (127.0.0.1, ::1)
+        - allow_private=True permits all internal ranges (loopback, RFC1918, CGN, link-local)
     """
     try:
         parsed = urlparse(url)
@@ -84,17 +97,30 @@ def validate_external_url(url: str, allow_localhost: bool = False, timeout: floa
 
             ip_obj = ipaddress.ip_address(ip)
 
-            # If localhost is not allowed, reject private/internal IPs
-            if not allow_localhost:
-                # Reject private/internal IPs
+            # If loopback is not allowed, reject loopback addresses
+            if allow_loopback is True:
+                # Only allow loopback, reject everything else
+                if not ip_obj.is_loopback:
+                    logger.warning(f"URL resolves to non-loopback IP with allow_loopback: {ip}")
+                    return False
+            elif allow_loopback is False or not allow_private:
+                # Reject private/internal IPs (RFC1918, CGN, link-local)
                 if ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local:
                     logger.warning(f"URL resolves to private/internal IP: {ip}")
+                    return False
+
+                # Reject CGN (Carrier-Grade NAT) - RFC 6598
+                if ip_obj in _CGN_NETWORK:
+                    logger.warning(f"URL resolves to CGN IP: {ip}")
                     return False
 
                 # Reject reserved ranges
                 if ip_obj.is_reserved or ip_obj.is_multicast:
                     logger.warning(f"URL resolves to reserved/multicast IP: {ip}")
                     return False
+            else:
+                # allow_private=True: allow all internal ranges
+                pass
 
         except socket.gaierror as e:
             logger.warning(f"Failed to resolve hostname {parsed.hostname}: {e}")

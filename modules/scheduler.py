@@ -17,6 +17,7 @@ from typing import Any, Optional
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
+from .security_utils import validate_external_url
 from .utils import decode_escape_sequences, format_keyword_response_with_placeholders, get_config_timezone
 
 
@@ -1099,6 +1100,14 @@ class MessageScheduler:
             )
             return
 
+        allow_local = self._get_notif('allow_local_smtp').lower() == 'true'
+        if not validate_external_url(f'http://{smtp_host}', allow_private=allow_local):
+            self.logger.error(
+                "Nightly email aborted: SMTP host %r resolves to a private or reserved address",
+                smtp_host,
+            )
+            return
+
         try:
             smtp_port = int(self._get_notif('smtp_port') or (465 if smtp_security == 'ssl' else 587))
         except ValueError:
@@ -1210,6 +1219,14 @@ class MessageScheduler:
                 "Zombie alert email enabled but SMTP settings incomplete "
                 f"(host={smtp_host!r}, from={from_email!r}, recipients={recipients}) "
                 "— alert email not sent"
+            )
+            return
+
+        allow_local = self._get_notif('allow_local_smtp').lower() == 'true'
+        if not validate_external_url(f'http://{smtp_host}', allow_private=allow_local):
+            self.bot.logger.error(
+                "Zombie alert email aborted: SMTP host %r resolves to a private or reserved address",
+                smtp_host,
             )
             return
 

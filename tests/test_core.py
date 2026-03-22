@@ -355,7 +355,8 @@ class TestProbeRadioHealth:
         asyncio.run(bot._probe_radio_health())
         assert not reconnect_called
 
-    def test_error_event_at_threshold_triggers_reconnect(self, tmp_path):
+    def test_error_event_at_threshold_triggers_zombie_detection(self, tmp_path):
+        """At threshold, zombie state is set and CRITICAL logged — no reconnect attempt."""
         from meshcore.events import EventType
         bot = self._make_bot(tmp_path)
         bot._radio_fail_count = 2  # this probe makes it 3
@@ -381,8 +382,9 @@ class TestProbeRadioHealth:
 
         result = asyncio.run(bot._probe_radio_health())
         assert result is False
-        assert bot._radio_fail_count == 0  # reset after trigger
-        assert reconnect_called
+        assert bot._radio_fail_count == 0   # reset after trigger
+        assert bot.is_radio_zombie is True  # zombie flag set
+        assert not reconnect_called         # reconnect NOT called — power cycle needed
 
     def test_success_resets_fail_count(self, tmp_path):
         from meshcore.events import EventType
