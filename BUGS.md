@@ -32,8 +32,6 @@ Known bugs and fixed issues in meshcore-bot.
 
 | ID      | Module                 | Description                                              | Notes                                        |
 |---------|------------------------|----------------------------------------------------------|----------------------------------------------|
-| BUG-026 | message_handler        | Keyword-dispatched responses sent as a single message    | By design — mesh-friendly; use              |
-|         |                        | (no auto-chunking); long responses may be truncated      | `send_response_chunked()` if needed          |
 | BUG-009 | message_handler        | DMs are never bridged to Discord or Telegram             | By design — DMs are private                  |
 | BUG-010 | wx_command             | Weather alerts and NOAA data are US-only                 | Use `wx_international.py` alternative        |
 | BUG-011 | repeater_manager       | MeshCore hard-limits contacts to 300; auto-purge         | Tune `auto_purge_threshold` and enable       |
@@ -77,6 +75,15 @@ Known bugs and fixed issues in meshcore-bot.
 | `36a8a67`   | —       | core                    | Fixed 1-byte to 2-byte prefix transition handling            |
 | `0c060a5`   | —       | command_manager         | Fixed chunked message race with rate limiter                 |
 | `58deb12`   | —       | repeater_manager        | Fixed `auto_manage_contacts = false` being ignored           |
+
+---
+
+## Design / Implementation Notes
+
+| Module          | Description                                              | Notes                                        |
+|-----------------|----------------------------------------------------------|----------------------------------------------|
+| message_handler | Keyword-dispatched responses sent as a single message    | Mesh-friendly by design; use                 |
+|                 | (no auto-chunking); long responses may be truncated      | `send_response_chunked()` if needed          |
 
 ---
 

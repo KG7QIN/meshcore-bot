@@ -4,7 +4,10 @@ Task list for meshcore-bot development. Auto-updated sections are regenerated
 by running `python scripts/update_todos.py` (see [Auto-Update](#auto-update)).
 
 **Last updated:** 2026-03-21 — 2,167 passed / 29 skipped; coverage 36.72%;
-target 40%; CI matrix fixed (Python 3.9 removed, ruff/mypy/ShellCheck green)
+target 40%; CI matrix fixed (Python 3.9 removed, ruff/mypy/ShellCheck green);
+agessaman `integration/massive-pr` changes merged into `dev-kg7qin-changes`
+(BUG-026 chunking revert in `message_handler.py`; alias normalization in
+`BaseCommand`/`CommandManager`)
 
 ---
 
