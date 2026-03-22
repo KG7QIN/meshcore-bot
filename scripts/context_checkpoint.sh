@@ -72,10 +72,32 @@ fi
 # 3. Flush pending bugs from .claude/pending_bugs.txt into BUGS.md
 PENDING=".claude/pending_bugs.txt"
 if [ -s "$PENDING" ]; then
-    printf '\n' >> BUGS.md
-    cat "$PENDING" >> BUGS.md
-    : > "$PENDING"
-    echo "BUGS.md: flushed pending bugs"
+    python3 - "$PENDING" <<'PYEOF'
+import pathlib, sys
+
+pending_path = pathlib.Path(sys.argv[1])
+bugs_path = pathlib.Path("BUGS.md")
+
+pending_text = pending_path.read_text().strip()
+bugs_content = bugs_path.read_text()
+
+marker = "## Reporting New Bugs"
+idx = bugs_content.find(marker)
+if idx == -1:
+    bugs_content = bugs_content.rstrip() + "\n\n" + pending_text + "\n"
+else:
+    bugs_content = (
+        bugs_content[:idx].rstrip()
+        + "\n\n"
+        + pending_text
+        + "\n\n---\n\n"
+        + bugs_content[idx:]
+    )
+
+bugs_path.write_text(bugs_content)
+pending_path.write_text("")
+print("BUGS.md: flushed pending bugs")
+PYEOF
 fi
 
 # 4. Append checkpoint log entry
