@@ -642,6 +642,64 @@ token =
 
 
 # ---------------------------------------------------------------------------
+# TestRadioOfflineState
+# ---------------------------------------------------------------------------
+
+
+class TestRadioOfflineState:
+    """Tests for _record_send_failure / _record_send_success / is_radio_offline."""
+
+    def _make_bot(self, tmp_path: Path) -> "MeshCoreBot":
+        config_file = tmp_path / "config.ini"
+        db_path = tmp_path / "bot.db"
+        _write_config(config_file, db_path)
+        return MeshCoreBot(config_file=str(config_file))
+
+    def test_is_radio_offline_defaults_to_false(self, tmp_path):
+        bot = self._make_bot(tmp_path)
+        assert bot.is_radio_offline is False
+
+    def test_record_send_failure_increments_counter(self, tmp_path):
+        bot = self._make_bot(tmp_path)
+        bot._record_send_failure()
+        assert bot._send_consecutive_failures == 1
+
+    def test_record_send_failure_sets_offline_at_threshold(self, tmp_path):
+        bot = self._make_bot(tmp_path)
+        # Default threshold is 3
+        for _ in range(3):
+            bot._record_send_failure()
+        assert bot.is_radio_offline is True
+
+    def test_record_send_success_clears_offline_flag(self, tmp_path):
+        bot = self._make_bot(tmp_path)
+        bot._radio_offline = True
+        bot._send_consecutive_failures = 5
+        bot._record_send_success()
+        assert bot.is_radio_offline is False
+        assert bot._send_consecutive_failures == 0
+
+    def test_record_send_success_no_op_when_already_clean(self, tmp_path):
+        bot = self._make_bot(tmp_path)
+        bot._record_send_success()  # must not raise
+        assert bot.is_radio_offline is False
+
+    def test_offline_not_set_below_threshold(self, tmp_path):
+        bot = self._make_bot(tmp_path)
+        bot._record_send_failure()
+        bot._record_send_failure()
+        assert bot.is_radio_offline is False
+
+    def test_custom_threshold_from_config(self, tmp_path):
+        bot = self._make_bot(tmp_path)
+        bot.config.set('Bot', 'radio_offline_threshold', '2')
+        bot._record_send_failure()
+        assert bot.is_radio_offline is False
+        bot._record_send_failure()
+        assert bot.is_radio_offline is True
+
+
+# ---------------------------------------------------------------------------
 # Helper: create a coroutine that returns a fixed value
 # ---------------------------------------------------------------------------
 
