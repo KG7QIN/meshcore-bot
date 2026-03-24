@@ -540,7 +540,7 @@ class MessageScheduler:
                     try:
                         future.result(timeout=60)
                     except Exception as e:
-                        self.logger.error(f"Error in repeater_manager.cleanup_database: {e}")
+                        self.logger.error(f"Error in repeater_manager.cleanup_database: {type(e).__name__}: {e}")
                 else:
                     try:
                         loop = asyncio.get_event_loop()
