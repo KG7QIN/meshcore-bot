@@ -3128,3 +3128,74 @@ class TestFeedPreviewSecurity:
             )
         mock_veu.assert_called()
         assert resp.status_code == 400
+
+
+class TestRadioDebugConfig:
+    """Tests for GET/POST /api/config/radio-debug endpoints."""
+
+    def test_get_returns_200_and_shape(self, client):
+        resp = client.get("/api/config/radio-debug")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert "meta" in data
+        assert "config_ini" in data
+        assert "enabled" in data["meta"]
+        assert "enabled" in data["config_ini"]
+
+    def test_get_reflects_metadata(self, client, viewer):
+        viewer.db_manager.set_metadata("radio.debug", "true")
+        resp = client.get("/api/config/radio-debug")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["meta"]["enabled"] == "true"
+        # cleanup
+        viewer.db_manager.set_metadata("radio.debug", "false")
+
+    def test_post_save_enabled(self, client, viewer):
+        resp = client.post(
+            "/api/config/radio-debug",
+            json={"enabled": "true"},
+            content_type="application/json",
+        )
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["success"] is True
+        assert viewer.db_manager.get_metadata("radio.debug") == "true"
+        # cleanup
+        viewer.db_manager.set_metadata("radio.debug", "false")
+
+    def test_post_save_disabled(self, client, viewer):
+        viewer.db_manager.set_metadata("radio.debug", "true")
+        resp = client.post(
+            "/api/config/radio-debug",
+            json={"enabled": "false"},
+            content_type="application/json",
+        )
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["success"] is True
+        assert viewer.db_manager.get_metadata("radio.debug") == "false"
+
+    def test_post_reconnect_queues_operation(self, client, viewer):
+        resp = client.post(
+            "/api/config/radio-debug",
+            json={"enabled": "true", "reconnect": "true"},
+            content_type="application/json",
+        )
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["success"] is True
+        assert data["op_id"] is not None
+        # cleanup
+        viewer.db_manager.set_metadata("radio.debug", "false")
+
+    def test_post_no_reconnect_returns_no_op_id(self, client):
+        resp = client.post(
+            "/api/config/radio-debug",
+            json={"enabled": "false", "reconnect": "false"},
+            content_type="application/json",
+        )
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["success"] is True
+        assert data["op_id"] is None
