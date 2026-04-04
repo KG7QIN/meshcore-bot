@@ -32,7 +32,7 @@ try:
     from unidecode import unidecode
     _unidecode_available = True
 except ImportError:
-    unidecode = None  # type: ignore[assignment]
+    unidecode = None
 
 
 def _has_hate_symbols(text: str) -> bool:
