@@ -861,3 +861,78 @@ class TestApiRadioStatus:
             # Response has 'connected' and 'status_known'
             assert 'connected' in data
             assert 'status_known' in data
+
+
+# ---------------------------------------------------------------------------
+# api_explorer
+# ---------------------------------------------------------------------------
+
+
+class TestApiExplorer:
+    def test_page_loads(self, mock_viewer):
+        with mock_viewer.app.test_client() as client:
+            response = client.get('/api-explorer')
+            assert response.status_code == 200
+
+    def test_contains_section_headings(self, mock_viewer):
+        with mock_viewer.app.test_client() as client:
+            response = client.get('/api-explorer')
+            body = response.data.decode()
+            assert 'System' in body
+            assert 'Contacts' in body
+            assert 'Feeds' in body
+
+    def test_contains_known_endpoints(self, mock_viewer):
+        with mock_viewer.app.test_client() as client:
+            response = client.get('/api-explorer')
+            body = response.data.decode()
+            assert '/api/health' in body
+            assert '/api/contacts' in body
+            assert '/api/mesh/nodes' in body
+
+    def test_contains_curl_buttons(self, mock_viewer):
+        with mock_viewer.app.test_client() as client:
+            response = client.get('/api-explorer')
+            body = response.data.decode()
+            assert 'curl-btn' in body
+
+
+# ---------------------------------------------------------------------------
+# error_handler
+# ---------------------------------------------------------------------------
+
+
+class TestErrorHandler500:
+    def test_api_path_returns_json_error(self, mock_viewer):
+        """500 on /api/ path returns JSON with 'error' key."""
+        @mock_viewer.app.route('/api/test-500-trigger')
+        def _boom():
+            raise RuntimeError("test 500")
+
+        # PROPAGATE_EXCEPTIONS must be False so the 500 handler fires instead of re-raising
+        mock_viewer.app.config['PROPAGATE_EXCEPTIONS'] = False
+        try:
+            with mock_viewer.app.test_client() as client:
+                response = client.get('/api/test-500-trigger',
+                                      headers={'Accept': 'application/json'})
+                assert response.status_code == 500
+                data = json.loads(response.data)
+                assert 'error' in data
+        finally:
+            mock_viewer.app.config['PROPAGATE_EXCEPTIONS'] = True
+
+    def test_browser_path_returns_html(self, mock_viewer):
+        """500 on non-API path returns HTML page."""
+        @mock_viewer.app.route('/test-500-html-trigger')
+        def _boom_html():
+            raise RuntimeError("test 500 html")
+
+        mock_viewer.app.config['PROPAGATE_EXCEPTIONS'] = False
+        try:
+            with mock_viewer.app.test_client() as client:
+                response = client.get('/test-500-html-trigger',
+                                      headers={'Accept': 'text/html'})
+                assert response.status_code == 500
+                assert b'Internal Server Error' in response.data
+        finally:
+            mock_viewer.app.config['PROPAGATE_EXCEPTIONS'] = True

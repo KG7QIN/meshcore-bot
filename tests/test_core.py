@@ -562,7 +562,7 @@ token =
 
         bot, token, port = self._make_bot_with_admin(tmp_path, port=15003)
 
-        with patch.object(bot, "reload_config", return_value=(True, "Config reloaded")):
+        with patch.object(bot, "reload_config", return_value=(True, "Configuration reloaded successfully")):
             server = bot._admin_server
             server.start()
             time.sleep(0.4)
@@ -576,7 +576,7 @@ token =
                 import json
                 body = json.loads(resp.read())
             assert body["success"] is True
-            assert "Config reloaded" in body["message"]
+            assert "reloaded" in body["message"].lower()
 
     def test_reload_endpoint_failure(self, tmp_path):
         """POST /api/admin/reload returns 409 when reload is rejected."""

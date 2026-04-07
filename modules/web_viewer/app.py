@@ -1247,7 +1247,13 @@ class BotDataViewer:
         @self.app.errorhandler(500)
         def internal_error(e):
             self.logger.exception("Unhandled exception (500): %s", e)
-            return make_response(("Internal Server Error", 500))
+            if request.path.startswith('/api/') or request.accept_mimetypes.best == 'application/json':
+                return make_response(jsonify({'error': 'An internal error occurred — see server logs'}), 500)
+            return make_response(render_template('error.html',
+                error_code=500,
+                error_title='Internal Server Error',
+                error_message='Something went wrong on our end. The error has been logged.',
+            ), 500)
 
         # Authentication middleware (BUG-001)
         _EXEMPT_PATHS = frozenset([
@@ -2040,6 +2046,11 @@ class BotDataViewer:
                 val = self.db_manager.get_metadata(k)
                 result[short] = val if val is not None else ''
             return jsonify(result)
+
+        @self.app.route('/api-explorer')
+        def api_explorer():
+            """API Explorer — browse all endpoints with curl examples."""
+            return render_template('api_explorer.html')
 
         @self.app.route('/mesh')
         def mesh():
