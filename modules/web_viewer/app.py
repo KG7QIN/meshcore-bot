@@ -357,11 +357,13 @@ class BotDataViewer:
                     radio_zombie_since = self.db_manager.get_metadata('bot.radio_zombie_since') or None
                     radio_offline = self.db_manager.get_metadata('bot.radio_offline') == 'true'
                     radio_offline_since = self.db_manager.get_metadata('bot.radio_offline_since') or None
+                    bot_initializing = self.db_manager.get_metadata('bot.initializing') == 'true'
                 except Exception:
                     radio_zombie = False
                     radio_zombie_since = None
                     radio_offline = False
                     radio_offline_since = None
+                    bot_initializing = False
                 return {
                     'greeter_enabled': greeter_enabled,
                     'feed_manager_enabled': feed_manager_enabled,
@@ -371,6 +373,7 @@ class BotDataViewer:
                     'radio_zombie_since': radio_zombie_since,
                     'radio_offline': radio_offline,
                     'radio_offline_since': radio_offline_since,
+                    'bot_initializing': bot_initializing,
                 }
             except Exception as e:
                 self.logger.exception("Template context processor failed: %s", e)
@@ -378,6 +381,7 @@ class BotDataViewer:
                     'greeter_enabled': False,
                     'feed_manager_enabled': False,
                     'bot_name': 'MeshCore Bot',
+                    'bot_initializing': False,
                     'version_info': version_info,
                     'radio_zombie': False,
                     'radio_zombie_since': None,
@@ -2113,6 +2117,29 @@ class BotDataViewer:
                 'version': 'modern_2.0',
                 'radio_zombie': radio_zombie,
                 'radio_zombie_since': radio_zombie_since,
+            })
+
+        @self.app.route('/api/banner-status')
+        def api_banner_status():
+            """Return current banner states for live JS polling."""
+            try:
+                radio_zombie = self.db_manager.get_metadata('bot.radio_zombie') == 'true'
+                radio_zombie_since = self.db_manager.get_metadata('bot.radio_zombie_since') or None
+                radio_offline = self.db_manager.get_metadata('bot.radio_offline') == 'true'
+                radio_offline_since = self.db_manager.get_metadata('bot.radio_offline_since') or None
+                bot_initializing = self.db_manager.get_metadata('bot.initializing') == 'true'
+            except Exception:
+                radio_zombie = False
+                radio_zombie_since = None
+                radio_offline = False
+                radio_offline_since = None
+                bot_initializing = False
+            return jsonify({
+                'radio_zombie': radio_zombie,
+                'radio_zombie_since': radio_zombie_since,
+                'radio_offline': radio_offline,
+                'radio_offline_since': radio_offline_since,
+                'bot_initializing': bot_initializing,
             })
 
         @self.app.route('/api/system-health')

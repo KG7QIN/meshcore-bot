@@ -1775,10 +1775,32 @@ long_jokes = false
 
         self.main_event_loop.set_exception_handler(_loop_exception_handler)
 
+        # Mark bot as initializing so the web viewer can show a status banner
+        try:
+            self.db_manager.set_metadata('bot.initializing', 'true')
+        except Exception as e:
+            self.logger.debug("Could not set bot.initializing metadata: %s", e)
+
+        # Start web viewer early (before radio connect) so operators can see the
+        # initializing banner and monitor startup progress
+        if self.web_viewer_integration and self.web_viewer_integration.enabled:
+            self.web_viewer_integration.start_viewer()
+            self.logger.info("Web viewer started (early, before radio connect)")
+
         # Connect to MeshCore node
         if not await self.connect():
             self.logger.error("Failed to connect to MeshCore node")
+            try:
+                self.db_manager.set_metadata('bot.initializing', 'false')
+            except Exception:
+                pass
             return
+
+        # Bot is now connected — clear the initializing flag
+        try:
+            self.db_manager.set_metadata('bot.initializing', 'false')
+        except Exception as e:
+            self.logger.debug("Could not clear bot.initializing metadata: %s", e)
 
         # Update transmission tracker bot prefix now that we're connected
         if hasattr(self, 'transmission_tracker') and self.transmission_tracker:
@@ -1802,10 +1824,7 @@ long_jokes = false
                 self.config.getint('Admin', 'port', fallback=5001),
             )
 
-        # Start web viewer if enabled
-        if self.web_viewer_integration and self.web_viewer_integration.enabled:
-            self.web_viewer_integration.start_viewer()
-            self.logger.info("Web viewer started")
+        # Web viewer already started early above (before radio connect)
 
         # Send startup advert if enabled
         await self.send_startup_advert()
