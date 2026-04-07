@@ -12,7 +12,7 @@ import sqlite3
 import threading
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -29,7 +29,7 @@ class MessageScheduler:
         self.logger = bot.logger
         self.scheduled_messages = {}
         self.scheduler_thread = None
-        self._apscheduler: Optional[BackgroundScheduler] = None
+        self._apscheduler: BackgroundScheduler | None = None
         self.last_channel_ops_check_time = 0
         self.last_message_queue_check_time = 0
         self.last_radio_ops_check_time = 0
@@ -41,6 +41,7 @@ class MessageScheduler:
         self._last_db_backup_stats: dict[str, Any] = {}
         self.last_log_rotation_check_time = 0
         self._last_log_rotation_applied: dict[str, str] = {}
+        self._stop_event = threading.Event()
 
     def get_current_time(self):
         """Get current time in configured timezone"""
@@ -146,6 +147,9 @@ class MessageScheduler:
             try:
                 future.result(timeout=60)  # 60 second timeout
                 self.bot._record_send_success()
+            except RuntimeError as e:
+                self.logger.warning(f"Event loop gone while sending scheduled message: {e}")
+                self.bot._record_send_failure(scheduler=self)
             except Exception as e:
                 self.logger.error(f"Error sending scheduled message: {type(e).__name__}: {e}", exc_info=True)
                 self.bot._record_send_failure(scheduler=self)
@@ -349,6 +353,7 @@ class MessageScheduler:
 
     def join(self, timeout: float = 5.0) -> None:
         """Wait for the scheduler thread to finish and stop APScheduler (e.g. during shutdown)."""
+        self._stop_event.set()
         if self._apscheduler is not None:
             try:
                 self._apscheduler.shutdown(wait=False)
@@ -509,7 +514,7 @@ class MessageScheduler:
                 self._maybe_run_db_backup()
                 self.last_db_backup_run = time.time()
 
-            time.sleep(1)
+            self._stop_event.wait(timeout=1)
 
         self.logger.info("Scheduler thread stopped")
 
@@ -548,6 +553,8 @@ class MessageScheduler:
                     )
                     try:
                         future.result(timeout=60)
+                    except RuntimeError as e:
+                        self.logger.warning(f"Event loop gone during cleanup_database: {e}")
                     except Exception as e:
                         self.logger.error(f"Error in repeater_manager.cleanup_database: {type(e).__name__}: {e}")
                 else:
@@ -644,6 +651,9 @@ class MessageScheduler:
             try:
                 future.result(timeout=60)  # 60 second timeout
                 self.bot._record_send_success()
+            except RuntimeError as e:
+                self.logger.warning(f"Event loop gone while sending interval advert: {e}")
+                self.bot._record_send_failure(scheduler=self)
             except Exception as e:
                 self.logger.error(f"Error sending interval advert: {type(e).__name__}: {e}", exc_info=True)
                 self.bot._record_send_failure(scheduler=self)

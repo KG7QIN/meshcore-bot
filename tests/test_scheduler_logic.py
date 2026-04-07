@@ -1439,7 +1439,7 @@ class TestSendScheduledMessageAsyncTimeout:
 
         async def run():
             async def fake_wait_for(coro, timeout):
-                raise asyncio.TimeoutError()
+                raise asyncio.TimeoutError()  # on 3.10 builtin TimeoutError != asyncio.TimeoutError
 
             with patch("asyncio.wait_for", side_effect=fake_wait_for):
                 await sched._send_scheduled_message_async("#general", "hello")

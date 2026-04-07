@@ -5,7 +5,6 @@ Handles RSS and API feed subscription management
 """
 
 import json
-from typing import Optional
 
 from ..models import MeshMessage
 from ..security_utils import sanitize_input, sanitize_name, validate_external_url
@@ -296,7 +295,7 @@ feed status 1"""
             return await self.send_response(message, f"Error: {str(e)}")
 
     def _create_subscription(self, feed_type: str, feed_url: str, channel_name: str,
-                            feed_name: Optional[str] = None, api_config: Optional[dict] = None) -> int:
+                            feed_name: str | None = None, api_config: dict | None = None) -> int:
         """Create a new feed subscription"""
 
         with self.bot.db_manager.connection() as conn:
@@ -337,7 +336,7 @@ feed status 1"""
             conn.commit()
             return cursor.rowcount > 0
 
-    def _get_subscriptions(self, channel_filter: Optional[str] = None) -> list[dict]:
+    def _get_subscriptions(self, channel_filter: str | None = None) -> list[dict]:
         """Get all subscriptions, optionally filtered by channel"""
         import sqlite3
 
@@ -360,7 +359,7 @@ feed status 1"""
             rows = cursor.fetchall()
             return [dict(row) for row in rows]
 
-    def _get_subscription_by_id(self, feed_id: int) -> Optional[dict]:
+    def _get_subscription_by_id(self, feed_id: int) -> dict | None:
         """Get subscription by ID"""
         import sqlite3
 
@@ -384,7 +383,7 @@ feed status 1"""
             conn.commit()
             return cursor.rowcount > 0
 
-    def _update_subscription(self, feed_id: int, interval: Optional[int] = None) -> bool:
+    def _update_subscription(self, feed_id: int, interval: int | None = None) -> bool:
         """Update subscription settings"""
 
         with self.bot.db_manager.connection() as conn:

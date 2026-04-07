@@ -11,7 +11,6 @@ import platform
 import re
 import socket
 from pathlib import Path
-from typing import Optional
 from urllib.parse import urlparse
 
 logger = logging.getLogger('MeshCoreBot.Security')
@@ -48,7 +47,8 @@ def _is_nix_environment() -> bool:
 def validate_external_url(
     url: str,
     allow_private: bool = False,
-    allow_loopback: bool | None = None,  # Deprecated: use allow_private=True instead
+    allow_loopback: bool | None = None,  # Deprecated: use allow_localhost=True instead
+    allow_localhost: bool = False,
     timeout: float = 2.0
 ) -> bool:
     """
@@ -57,7 +57,9 @@ def validate_external_url(
     Args:
         url: URL to validate
         allow_private: Whether to allow private/internal IPs (default: False)
-        allow_loopback: Deprecated alias for allow_private
+        allow_loopback: Deprecated. Use allow_localhost=True instead.
+        allow_localhost: Permit loopback-only addresses (127.0.0.1, ::1) — useful
+            for internal health-check or admin URLs (default: False)
         timeout: DNS resolution timeout in seconds (default: 2.0)
 
     Returns:
@@ -67,7 +69,7 @@ def validate_external_url(
         ValueError: If URL is invalid or unsafe
 
     Note:
-        - allow_loopback=True only permits loopback addresses (127.0.0.1, ::1)
+        - allow_localhost=True permits only loopback (127.x, ::1)
         - allow_private=True permits all internal ranges (loopback, RFC1918, CGN, link-local)
     """
     try:
@@ -98,10 +100,11 @@ def validate_external_url(
             ip_obj = ipaddress.ip_address(ip)
 
             # If loopback is not allowed, reject loopback addresses
-            if allow_loopback is True:
+            _allow_loopback_only = allow_localhost or (allow_loopback is True)
+            if _allow_loopback_only:
                 # Only allow loopback, reject everything else
                 if not ip_obj.is_loopback:
-                    logger.warning(f"URL resolves to non-loopback IP with allow_loopback: {ip}")
+                    logger.warning(f"URL resolves to non-loopback IP with allow_localhost: {ip}")
                     return False
             elif allow_loopback is False or not allow_private:
                 # Reject private/internal IPs (RFC1918, CGN, link-local)
@@ -228,7 +231,7 @@ def validate_safe_path(file_path: str, base_dir: str = '.', allow_absolute: bool
         raise ValueError(f"Invalid or unsafe file path: {file_path} - {e}")
 
 
-def sanitize_input(content: str, max_length: Optional[int] = 500, strip_controls: bool = True) -> str:
+def sanitize_input(content: str, max_length: int | None = 500, strip_controls: bool = True) -> str:
     """
     Sanitize user input to prevent injection attacks
 
