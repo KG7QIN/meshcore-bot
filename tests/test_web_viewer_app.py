@@ -1025,3 +1025,101 @@ class TestApiRadioOfflineClear:
         data = json.loads(response.data)
         assert data['success'] is True
         assert viewer_with_db.db_manager.get_metadata('bot.radio_offline') == 'false'
+
+
+# ---------------------------------------------------------------------------
+# /mesh page
+# ---------------------------------------------------------------------------
+
+
+class TestMeshPage:
+    def test_mesh_page_loads_200(self, viewer_with_db):
+        with viewer_with_db.app.test_client() as client:
+            response = client.get('/mesh')
+        assert response.status_code == 200
+
+    def test_mesh_page_with_prefix_bytes_config(self, viewer_with_db):
+        viewer_with_db.config.set('Bot', 'prefix_bytes', '2')
+        with viewer_with_db.app.test_client() as client:
+            response = client.get('/mesh')
+        assert response.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# /api/health
+# ---------------------------------------------------------------------------
+
+
+class TestApiHealth:
+    def test_returns_healthy_by_default(self, viewer_with_db):
+        with viewer_with_db.app.test_client() as client:
+            response = client.get('/api/health')
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert data['status'] == 'healthy'
+        assert 'connected_clients' in data
+        assert 'version' in data
+        assert data['radio_zombie'] is False
+
+    def test_returns_degraded_when_zombie(self, viewer_with_db):
+        viewer_with_db.db_manager.set_metadata('bot.radio_zombie', 'true')
+        with viewer_with_db.app.test_client() as client:
+            response = client.get('/api/health')
+        data = json.loads(response.data)
+        assert data['status'] == 'degraded'
+        assert data['radio_zombie'] is True
+
+
+# ---------------------------------------------------------------------------
+# /api/banner-status
+# ---------------------------------------------------------------------------
+
+
+class TestApiBannerStatus:
+    def test_returns_all_banner_keys(self, viewer_with_db):
+        with viewer_with_db.app.test_client() as client:
+            response = client.get('/api/banner-status')
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert 'radio_zombie' in data
+        assert 'radio_offline' in data
+        assert 'bot_initializing' in data
+
+    def test_reflects_zombie_state(self, viewer_with_db):
+        viewer_with_db.db_manager.set_metadata('bot.radio_zombie', 'true')
+        with viewer_with_db.app.test_client() as client:
+            response = client.get('/api/banner-status')
+        data = json.loads(response.data)
+        assert data['radio_zombie'] is True
+
+
+# ---------------------------------------------------------------------------
+# Favicon / static asset routes
+# ---------------------------------------------------------------------------
+
+
+class TestFaviconRoutes:
+    """Favicon routes call send_from_directory — patch it to avoid fs dependency."""
+
+    def _check_route(self, viewer_with_db, path):
+        from unittest.mock import patch as _patch
+        with viewer_with_db.app.test_client() as client:
+            with _patch("modules.web_viewer.app.send_from_directory",
+                        return_value=viewer_with_db.app.response_class("ok", status=200)):
+                response = client.get(path)
+        assert response.status_code == 200
+
+    def test_apple_touch_icon(self, viewer_with_db):
+        self._check_route(viewer_with_db, '/apple-touch-icon.png')
+
+    def test_favicon_32x32(self, viewer_with_db):
+        self._check_route(viewer_with_db, '/favicon-32x32.png')
+
+    def test_favicon_16x16(self, viewer_with_db):
+        self._check_route(viewer_with_db, '/favicon-16x16.png')
+
+    def test_site_webmanifest(self, viewer_with_db):
+        self._check_route(viewer_with_db, '/site.webmanifest')
+
+    def test_favicon_ico(self, viewer_with_db):
+        self._check_route(viewer_with_db, '/favicon.ico')

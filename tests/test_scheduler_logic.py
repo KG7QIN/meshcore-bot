@@ -1740,3 +1740,238 @@ class TestSchedulerSendNightlyEmail:
         with patch("smtplib.SMTP", side_effect=ConnectionRefusedError("refused")):
             sched._send_nightly_email()
         sched.bot.logger.error.assert_called()
+
+
+# ---------------------------------------------------------------------------
+# _send_nightly_email — additional branch coverage
+# ---------------------------------------------------------------------------
+
+
+class TestNightlyEmailBranches:
+    """Cover branches in _send_nightly_email not hit by earlier tests."""
+
+    def test_incomplete_config_logs_warning_and_returns(self):
+        """Missing smtp_host → log warning and return before smtplib call."""
+        sched = _make_smtp_scheduler({"smtp_host": ""})
+        with patch("smtplib.SMTP") as mock_smtp:
+            sched._send_nightly_email()
+        mock_smtp.assert_not_called()
+        sched.bot.logger.warning.assert_called()
+
+    def test_invalid_smtp_port_falls_back_to_587(self):
+        """Non-numeric smtp_port → ValueError caught → fallback port 587."""
+        sched = _make_smtp_scheduler({"smtp_port": "notanumber"})
+        with patch("modules.scheduler.validate_external_url", return_value=True), \
+             patch("smtplib.SMTP") as mock_smtp:
+            sched._send_nightly_email()
+        # SMTP should have been called (port 587 fallback)
+        mock_smtp.assert_called_once()
+        _, kwargs = mock_smtp.call_args
+        # port can be positional arg[1]
+        call_args = mock_smtp.call_args[0]
+        assert call_args[1] == 587
+
+    def test_ssl_security_uses_smtp_ssl(self):
+        """smtp_security='ssl' → SMTP_SSL called instead of SMTP."""
+        sched = _make_smtp_scheduler({"smtp_security": "ssl", "smtp_port": "465"})
+        with patch("modules.scheduler.validate_external_url", return_value=True), \
+             patch("smtplib.SMTP_SSL") as mock_ssl, \
+             patch("smtplib.SMTP") as mock_plain:
+            sched._send_nightly_email()
+        mock_ssl.assert_called_once()
+        mock_plain.assert_not_called()
+
+    def test_ssl_with_credentials_calls_login(self):
+        """smtp_security='ssl' with user/password → login() called on SMTP_SSL context."""
+        sched = _make_smtp_scheduler({
+            "smtp_security": "ssl",
+            "smtp_user": "user@example.com",
+            "smtp_password": "s3cr3t",
+        })
+        ctx_mgr = MagicMock()
+        smtp_instance = MagicMock()
+        ctx_mgr.__enter__ = Mock(return_value=smtp_instance)
+        ctx_mgr.__exit__ = Mock(return_value=False)
+
+        with patch("modules.scheduler.validate_external_url", return_value=True), \
+             patch("smtplib.SMTP_SSL", return_value=ctx_mgr):
+            sched._send_nightly_email()
+        smtp_instance.login.assert_called_once_with("user@example.com", "s3cr3t")
+
+    def test_starttls_with_credentials_calls_login(self):
+        """smtp_security='starttls' with user/password → login() called."""
+        sched = _make_smtp_scheduler({
+            "smtp_security": "starttls",
+            "smtp_user": "user@example.com",
+            "smtp_password": "s3cr3t",
+        })
+        ctx_mgr = MagicMock()
+        smtp_instance = MagicMock()
+        ctx_mgr.__enter__ = Mock(return_value=smtp_instance)
+        ctx_mgr.__exit__ = Mock(return_value=False)
+
+        with patch("modules.scheduler.validate_external_url", return_value=True), \
+             patch("smtplib.SMTP", return_value=ctx_mgr):
+            sched._send_nightly_email()
+        smtp_instance.login.assert_called_once_with("user@example.com", "s3cr3t")
+
+
+# ---------------------------------------------------------------------------
+# _firmware_read_op / _firmware_write_op — no-radio-connected paths
+# ---------------------------------------------------------------------------
+
+
+class TestFirmwareOps:
+    """Cover radio-not-connected early returns for firmware ops."""
+
+    def test_firmware_read_no_meshcore_returns_error(self):
+        import asyncio
+        sched = _make_scheduler()
+        sched.bot.meshcore = None
+        result = asyncio.run(sched._firmware_read_op())
+        assert result == (False, {"error": "Radio not connected"})
+
+    def test_firmware_read_meshcore_not_connected_returns_error(self):
+        import asyncio
+        sched = _make_scheduler()
+        meshcore = MagicMock()
+        meshcore.is_connected = False
+        sched.bot.meshcore = meshcore
+        result = asyncio.run(sched._firmware_read_op())
+        assert result == (False, {"error": "Radio not connected"})
+
+    def test_firmware_write_no_meshcore_returns_error(self):
+        import asyncio
+        sched = _make_scheduler()
+        sched.bot.meshcore = None
+        result = asyncio.run(sched._firmware_write_op({}))
+        assert result == (False, {"error": "Radio not connected"})
+
+    def test_firmware_write_meshcore_not_connected_returns_error(self):
+        import asyncio
+        sched = _make_scheduler()
+        meshcore = MagicMock()
+        meshcore.is_connected = False
+        sched.bot.meshcore = meshcore
+        result = asyncio.run(sched._firmware_write_op({}))
+        assert result == (False, {"error": "Radio not connected"})
+
+
+# ---------------------------------------------------------------------------
+# _process_channel_operations / _process_radio_operations — queue paths
+# ---------------------------------------------------------------------------
+
+
+class _MockRow:
+    """dict-like mock for sqlite3.Row access."""
+
+    def __init__(self, **kwargs):
+        self._data = kwargs
+
+    def __getitem__(self, key):
+        return self._data[key]
+
+
+def _make_scheduler_with_ops(ops_rows):
+    """Return a _make_scheduler()-based scheduler whose cursor returns ops_rows."""
+    sched = _make_scheduler()
+    # Override cursor fetchall to return ops_rows on first call, [] on subsequent
+    call_count = [0]
+
+    def _fetchall():
+        call_count[0] += 1
+        return ops_rows if call_count[0] == 1 else []
+
+    sched.bot.db_manager.connection.return_value.cursor.return_value.fetchall.side_effect = _fetchall
+    return sched
+
+
+class TestProcessChannelOperations:
+    """Cover _process_channel_operations async paths."""
+
+    def test_empty_queue_returns_early(self):
+        import asyncio
+        sched = _make_scheduler()
+        sched.bot.db_manager.connection.return_value.cursor.return_value.fetchall.return_value = []
+        asyncio.run(sched._process_channel_operations())
+        # No channel_manager calls expected
+        sched.bot.channel_manager.add_channel.assert_not_called()
+
+    def test_add_op_without_key_calls_add_channel(self):
+        import asyncio
+        row = _MockRow(id=1, operation_type="add", channel_idx=0,
+                       channel_name="TestChan", channel_key_hex=None)
+        sched = _make_scheduler_with_ops([row])
+        sched.bot.channel_manager.add_channel = AsyncMock(return_value=True)
+        asyncio.run(sched._process_channel_operations())
+        sched.bot.channel_manager.add_channel.assert_called_once_with(0, "TestChan")
+
+    def test_add_op_with_hex_key_passes_secret_bytes(self):
+        import asyncio
+        row = _MockRow(id=2, operation_type="add", channel_idx=1,
+                       channel_name="SecretChan", channel_key_hex="deadbeef")
+        sched = _make_scheduler_with_ops([row])
+        sched.bot.channel_manager.add_channel = AsyncMock(return_value=True)
+        asyncio.run(sched._process_channel_operations())
+        sched.bot.channel_manager.add_channel.assert_called_once_with(
+            1, "SecretChan", channel_secret=bytes.fromhex("deadbeef")
+        )
+
+    def test_add_op_failure_marks_failed(self):
+        import asyncio
+        row = _MockRow(id=3, operation_type="add", channel_idx=0,
+                       channel_name="FailChan", channel_key_hex=None)
+        sched = _make_scheduler_with_ops([row])
+        sched.bot.channel_manager.add_channel = AsyncMock(return_value=False)
+        asyncio.run(sched._process_channel_operations())
+        # status should be updated to failed
+        cursor = sched.bot.db_manager.connection.return_value.cursor.return_value
+        executed_sql = [str(c) for c in cursor.execute.call_args_list]
+        assert any("failed" in s.lower() or "UPDATE" in s for s in executed_sql)
+
+    def test_remove_op_calls_remove_channel(self):
+        import asyncio
+        row = _MockRow(id=4, operation_type="remove", channel_idx=2,
+                       channel_name=None, channel_key_hex=None)
+        sched = _make_scheduler_with_ops([row])
+        sched.bot.channel_manager.remove_channel = AsyncMock(return_value=True)
+        asyncio.run(sched._process_channel_operations())
+        sched.bot.channel_manager.remove_channel.assert_called_once_with(2)
+
+    def test_outer_exception_is_logged(self):
+        import asyncio
+        sched = _make_scheduler()
+        # Force connection to raise
+        sched.bot.db_manager.connection.side_effect = RuntimeError("db gone")
+        asyncio.run(sched._process_channel_operations())
+        sched.bot.logger.exception.assert_called()
+
+
+class TestProcessRadioOperations:
+    """Cover _process_radio_operations async paths."""
+
+    def test_empty_queue_returns_early(self):
+        import asyncio
+        sched = _make_scheduler()
+        sched.bot.db_manager.connection.return_value.cursor.return_value.fetchone.return_value = None
+        asyncio.run(sched._process_radio_operations())
+        sched.bot.reboot_radio.assert_not_called()
+
+    def test_radio_reboot_op_calls_reboot(self):
+        import asyncio
+        row = _MockRow(id=10, operation_type="radio_reboot", payload_data=None)
+        sched = _make_scheduler()
+        sched.bot.db_manager.connection.return_value.cursor.return_value.fetchone.return_value = row
+        sched.bot.reboot_radio = AsyncMock(return_value=True)
+        asyncio.run(sched._process_radio_operations())
+        sched.bot.reboot_radio.assert_called_once()
+
+    def test_unknown_op_type_marks_failed(self):
+        import asyncio
+        row = _MockRow(id=11, operation_type="unknown_type", payload_data=None)
+        sched = _make_scheduler()
+        sched.bot.db_manager.connection.return_value.cursor.return_value.fetchone.return_value = row
+        asyncio.run(sched._process_radio_operations())
+        cursor = sched.bot.db_manager.connection.return_value.cursor.return_value
+        sql_calls = [str(c) for c in cursor.execute.call_args_list]
+        assert any("failed" in s.lower() or "UPDATE" in s for s in sql_calls)
