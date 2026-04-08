@@ -2052,6 +2052,18 @@ class BotDataViewer:
             """API Explorer — browse all endpoints with curl examples."""
             return render_template('api_explorer.html')
 
+        @self.app.route('/admin/config')
+        def admin_config():
+            """Resolved config viewer — shows effective config.ini values with sensitive fields redacted."""
+            _REDACT_KEYS = {'password', 'smtp_password', 'api_key', 'token', 'secret', 'smtp_user'}
+            sections = {}
+            for section in self.config.sections():
+                sections[section] = {
+                    k: '●●●●●●' if any(r in k for r in _REDACT_KEYS) else v
+                    for k, v in self.config.items(section)
+                }
+            return render_template('admin_config.html', sections=sections, config_path=self.config_path)
+
         @self.app.route('/mesh')
         def mesh():
             """Mesh graph visualization page"""
