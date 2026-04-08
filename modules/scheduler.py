@@ -54,7 +54,7 @@ class MessageScheduler:
         if self._apscheduler is not None:
             try:
                 self._apscheduler.shutdown(wait=False)
-            except Exception:
+            except Exception:  # noqa: BLE001 — SchedulerNotRunningError or misc shutdown error
                 pass
         tz, _ = get_config_timezone(self.bot.config, self.logger)
         self._apscheduler = BackgroundScheduler(timezone=tz)
@@ -232,7 +232,7 @@ class MessageScheduler:
                             result = cursor.fetchone()
                             if result:
                                 info['recent_activity_24h'] = result[0]
-                except Exception:
+                except (sqlite3.Error, OSError):
                     pass
 
             # Calculate new devices in last 7 days (matching web viewer logic)
@@ -357,7 +357,7 @@ class MessageScheduler:
         if self._apscheduler is not None:
             try:
                 self._apscheduler.shutdown(wait=False)
-            except Exception:
+            except Exception:  # noqa: BLE001 — SchedulerNotRunningError or misc shutdown error
                 pass
         if self.scheduler_thread and self.scheduler_thread.is_alive():
             self.scheduler_thread.join(timeout=timeout)
@@ -526,7 +526,7 @@ class MessageScheduler:
             try:
                 if self.bot.config.has_section(section) and self.bot.config.has_option(section, key):
                     return self.bot.config.getint(section, key)
-            except Exception:
+            except ValueError:  # malformed integer in config
                 pass
             return default
 
@@ -589,7 +589,7 @@ class MessageScheduler:
             try:
                 self.bot.db_manager.set_metadata('maint.status.data_retention_ran_at', ran_at)
                 self.bot.db_manager.set_metadata('maint.status.data_retention_outcome', 'ok')
-            except Exception:
+            except (sqlite3.Error, OSError):  # best-effort status write
                 pass
 
         except Exception as e:
@@ -599,7 +599,7 @@ class MessageScheduler:
                 ran_at = datetime.datetime.utcnow().isoformat()
                 self.bot.db_manager.set_metadata('maint.status.data_retention_ran_at', ran_at)
                 self.bot.db_manager.set_metadata('maint.status.data_retention_outcome', f'error: {e}')
-            except Exception:
+            except (sqlite3.Error, OSError):  # best-effort status write
                 pass
 
     def check_interval_advertising(self):
@@ -1052,7 +1052,7 @@ class MessageScheduler:
                         stats['log_backup_size_mb'] = f'{backup.stat().st_size / 1_048_576:.1f}'
                     else:
                         stats['log_rotated_24h'] = False
-        except Exception:
+        except OSError:  # Path.stat() may fail if log file is inaccessible
             pass
 
         # Data retention last run
@@ -1207,7 +1207,7 @@ class MessageScheduler:
                 ran_at = datetime.datetime.utcnow().isoformat()
                 self.bot.db_manager.set_metadata('maint.status.nightly_email_ran_at', ran_at)
                 self.bot.db_manager.set_metadata('maint.status.nightly_email_outcome', 'ok')
-            except Exception:
+            except (sqlite3.Error, OSError):  # best-effort status write
                 pass
 
         except Exception as e:
@@ -1216,7 +1216,7 @@ class MessageScheduler:
                 ran_at = datetime.datetime.utcnow().isoformat()
                 self.bot.db_manager.set_metadata('maint.status.nightly_email_ran_at', ran_at)
                 self.bot.db_manager.set_metadata('maint.status.nightly_email_outcome', f'error: {e}')
-            except Exception:
+            except (sqlite3.Error, OSError):  # best-effort status write
                 pass
 
     # ── Zombie radio alert email ─────────────────────────────────────────────
@@ -1526,7 +1526,7 @@ class MessageScheduler:
                 try:
                     ran_at = datetime.datetime.utcnow().isoformat()
                     self.bot.db_manager.set_metadata('maint.status.log_rotation_applied_at', ran_at)
-                except Exception:
+                except (sqlite3.Error, OSError):  # best-effort status write
                     pass
                 break
 
@@ -1566,7 +1566,7 @@ class MessageScheduler:
                 db_ran_at = self.bot.db_manager.get_metadata('maint.status.db_backup_ran_at') or ''
                 if db_ran_at:
                     self._last_db_backup_stats['ran_at'] = db_ran_at
-            except Exception:
+            except (sqlite3.Error, OSError):  # best-effort metadata read
                 pass
 
         date_key = now.strftime('%Y-%m-%d')
@@ -1602,7 +1602,7 @@ class MessageScheduler:
             try:
                 self.bot.db_manager.set_metadata('maint.status.db_backup_ran_at', ran_at)
                 self.bot.db_manager.set_metadata('maint.status.db_backup_outcome', f'error: {e}')
-            except Exception:
+            except (sqlite3.Error, OSError):  # best-effort status write
                 pass
             return
 
@@ -1639,7 +1639,7 @@ class MessageScheduler:
                 self.bot.db_manager.set_metadata('maint.status.db_backup_ran_at', ran_at)
                 self.bot.db_manager.set_metadata('maint.status.db_backup_outcome', 'ok')
                 self.bot.db_manager.set_metadata('maint.status.db_backup_path', str(backup_path))
-            except Exception:
+            except (sqlite3.Error, OSError):  # best-effort status write
                 pass
 
         except Exception as e:
@@ -1648,5 +1648,5 @@ class MessageScheduler:
             try:
                 self.bot.db_manager.set_metadata('maint.status.db_backup_ran_at', ran_at)
                 self.bot.db_manager.set_metadata('maint.status.db_backup_outcome', f'error: {e}')
-            except Exception:
+            except (sqlite3.Error, OSError):  # best-effort status write
                 pass

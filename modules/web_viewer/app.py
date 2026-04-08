@@ -540,7 +540,7 @@ class BotDataViewer:
                     bot_latitude = lat
                     bot_longitude = lon
                     geographic_guessing_enabled = True
-        except Exception:
+        except (ValueError, configparser.Error):  # malformed float or missing section
             pass
 
         # Path command settings
@@ -1018,8 +1018,8 @@ class BotDataViewer:
                                         path_validation_bonus = min(graph_path_validation_max_bonus, path_validation_bonus)
                                         if path_validation_bonus >= graph_path_validation_max_bonus * 0.9:
                                             break  # Strong match found, no need to check more
-                    except Exception:
-                        pass
+                    except (sqlite3.Error, OSError, KeyError, ValueError) as _score_err:
+                        self.logger.debug("Path-scoring graph query failed: %s", _score_err)
 
                 # Add path validation bonus to graph score
                 candidate_score = min(1.0, candidate_score + path_validation_bonus)
@@ -3879,7 +3879,7 @@ class BotDataViewer:
                     for row in rows:
                         try:
                             emit('command_data', json.loads(row['data']))
-                        except Exception:
+                        except (json.JSONDecodeError, KeyError, TypeError):
                             pass
                 except Exception as e:
                     self.logger.warning(f"Error replaying command history: {e}", exc_info=True)
@@ -3912,7 +3912,7 @@ class BotDataViewer:
                             data = json.loads(row['data'])
                             evt = 'command_data' if row['type'] == 'command' else 'packet_data'
                             emit(evt, data)
-                        except Exception:
+                        except (json.JSONDecodeError, KeyError, TypeError):
                             pass
                 except Exception as e:
                     self.logger.warning(f"Error replaying packet history: {e}", exc_info=True)
@@ -3956,7 +3956,7 @@ class BotDataViewer:
                     for row in rows:
                         try:
                             emit('message_data', json.loads(row['data']))
-                        except Exception:
+                        except (json.JSONDecodeError, KeyError, TypeError):
                             pass
                 except Exception as e:
                     self.logger.warning(f"Error replaying message history: {e}", exc_info=True)
@@ -3979,7 +3979,7 @@ class BotDataViewer:
                     log_file = self.config.get('Logging', 'log_file', fallback='').strip()
                     if log_file:
                         log_file = str(resolve_path(log_file, self._config_base))
-                except Exception:
+                except (configparser.Error, OSError, ValueError):  # bad config or inaccessible path
                     pass
                 if log_file and os.path.exists(log_file):
                     try:
@@ -6941,7 +6941,7 @@ class BotDataViewer:
                     bot_latitude = lat
                     bot_longitude = lon
                     geographic_guessing_enabled = True
-        except Exception:
+        except (ValueError, configparser.Error):  # malformed float or missing section
             pass
 
         self.config.get('Path_Command', 'proximity_method', fallback='simple')
@@ -7252,8 +7252,8 @@ class BotDataViewer:
                                         path_validation_bonus = min(graph_path_validation_max_bonus, path_validation_bonus)
                                         if path_validation_bonus >= graph_path_validation_max_bonus * 0.9:
                                             break  # Strong match found, no need to check more
-                    except Exception:
-                        pass
+                    except (sqlite3.Error, OSError, KeyError, ValueError) as _score_err:
+                        self.logger.debug("Path-scoring graph query failed: %s", _score_err)
 
                 candidate_score = min(1.0, candidate_score + path_validation_bonus)
 

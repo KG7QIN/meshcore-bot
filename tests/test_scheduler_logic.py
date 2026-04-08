@@ -1213,8 +1213,9 @@ class TestRunDataRetention:
 
     def test_no_error_when_db_manager_set_metadata_raises(self):
         """set_metadata failures after ran_at assignment should be silently swallowed."""
+        import sqlite3 as _sqlite3
         scheduler = self._make()
-        scheduler.bot.db_manager.set_metadata = Mock(side_effect=Exception("locked"))
+        scheduler.bot.db_manager.set_metadata = Mock(side_effect=_sqlite3.OperationalError("locked"))
         # Should not propagate
         scheduler._run_data_retention()
         assert "ran_at" in scheduler._last_retention_stats
