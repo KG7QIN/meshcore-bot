@@ -1584,3 +1584,159 @@ class TestZombieAlertEmailSsrfGuard:
                 sched.send_zombie_alert_email(fail_count=5, threshold=3, interval=60)
         logged = str(sched.bot.logger.error.call_args_list)
         assert "private" not in logged.lower() and "reserved" not in logged.lower()
+
+
+# ---------------------------------------------------------------------------
+# _run_data_retention — event loop running path (lines 550-559)
+# ---------------------------------------------------------------------------
+
+
+class TestRunDataRetentionEventLoop:
+    """Cover the asyncio.run_coroutine_threadsafe branch (main_event_loop.is_running())."""
+
+    def _make(self):
+        bot = Mock()
+        bot.logger = Mock()
+        bot.config = ConfigParser()
+        bot.config.add_section("Bot")
+        # Remove optional attrs so hasattr gates return False by default
+        for attr in ["web_viewer_integration", "command_manager", "mesh_graph"]:
+            if hasattr(bot, attr):
+                delattr(bot, attr)
+        return MessageScheduler(bot)
+
+    def test_uses_run_coroutine_threadsafe_when_loop_running(self):
+        scheduler = self._make()
+        rm = Mock()
+        rm.cleanup_database = AsyncMock()
+        rm.cleanup_repeater_retention = Mock()
+
+        loop_mock = Mock()
+        loop_mock.is_running.return_value = True
+        future_mock = Mock()
+        future_mock.result = Mock(return_value=None)
+        loop_mock.run_coroutine_threadsafe = Mock(return_value=future_mock)
+
+        scheduler.bot.repeater_manager = rm
+        scheduler.bot.main_event_loop = loop_mock
+
+        with patch("asyncio.run_coroutine_threadsafe", return_value=future_mock) as mock_rcts:
+            scheduler._run_data_retention()
+
+        mock_rcts.assert_called_once()
+        assert "ran_at" in scheduler._last_retention_stats
+
+    def test_runtime_error_from_future_is_logged_as_warning(self):
+        scheduler = self._make()
+        rm = Mock()
+        rm.cleanup_database = AsyncMock()
+        rm.cleanup_repeater_retention = Mock()
+
+        loop_mock = Mock()
+        loop_mock.is_running.return_value = True
+        future_mock = Mock()
+        future_mock.result = Mock(side_effect=RuntimeError("loop gone"))
+
+        scheduler.bot.repeater_manager = rm
+        scheduler.bot.main_event_loop = loop_mock
+
+        with patch("asyncio.run_coroutine_threadsafe", return_value=future_mock):
+            scheduler._run_data_retention()
+
+        scheduler.bot.logger.warning.assert_called()
+
+
+# ---------------------------------------------------------------------------
+# _collect_email_stats (scheduler copy, lines 974-1061)
+# ---------------------------------------------------------------------------
+
+
+def _make_bare_scheduler():
+    """Minimal scheduler with Mock (not MagicMock) bot for email stat tests."""
+    bot = Mock()
+    bot.logger = Mock()
+    bot.config = ConfigParser()
+    bot.config.add_section("Bot")
+    return MessageScheduler(bot)
+
+
+class TestSchedulerCollectEmailStats:
+    def test_uptime_unknown_when_no_connection_time(self):
+        sched = _make_bare_scheduler()
+        sched.bot.connection_time = None
+        stats = sched._collect_email_stats()
+        assert stats["uptime"] == "unknown"
+
+    def test_uptime_string_when_connected(self):
+        sched = _make_bare_scheduler()
+        sched.bot.connection_time = time.time() - 7200  # 2h ago
+        stats = sched._collect_email_stats()
+        assert "h" in stats["uptime"]
+
+    def test_includes_retention_key(self):
+        sched = _make_bare_scheduler()
+        sched._last_retention_stats = {"ran_at": "2026-04-07T03:00:00"}
+        stats = sched._collect_email_stats()
+        assert stats["retention"]["ran_at"] == "2026-04-07T03:00:00"
+
+    def test_db_size_unknown_when_path_missing(self):
+        sched = _make_bare_scheduler()
+        sched.bot.db_manager.db_path = "/nonexistent/nowhere.db"
+        stats = sched._collect_email_stats()
+        assert stats.get("db_size_mb") == "unknown"
+
+
+# ---------------------------------------------------------------------------
+# _format_email_body (scheduler copy, lines 1063-1115)
+# ---------------------------------------------------------------------------
+
+
+class TestSchedulerFormatEmailBody:
+    def test_contains_header_and_sections(self):
+        sched = _make_bare_scheduler()
+        sched.bot.connected = True
+        body = sched._format_email_body(
+            {"uptime": "1h 30m", "contacts_24h": 5, "db_size_mb": "0.8"},
+            "2026-04-07 06:00 UTC",
+            "2026-04-08 06:00 UTC",
+        )
+        assert "MeshCore Bot" in body
+        assert "2026-04-07 06:00 UTC" in body
+        assert "BOT STATUS" in body
+        assert "DATABASE" in body
+
+    def test_log_section_present_when_log_file_in_stats(self):
+        sched = _make_bare_scheduler()
+        sched.bot.connected = False
+        body = sched._format_email_body(
+            {"log_file": "/var/log/bot.log", "log_rotated_24h": False},
+            "s", "e",
+        )
+        assert "LOG FILES" in body
+        assert "Rotated : no" in body
+
+
+# ---------------------------------------------------------------------------
+# _send_nightly_email — success and disabled paths (scheduler copy)
+# ---------------------------------------------------------------------------
+
+
+class TestSchedulerSendNightlyEmail:
+    def test_skips_when_disabled(self):
+        sched = _make_smtp_scheduler({"nightly_enabled": "false"})
+        sched._send_nightly_email()
+        sched.bot.db_manager.set_metadata.assert_not_called()
+
+    def test_sends_and_logs_info_on_success(self):
+        sched = _make_smtp_scheduler({})
+        with patch("modules.scheduler.validate_external_url", return_value=True), \
+             patch("smtplib.SMTP") as mock_smtp:
+            sched._send_nightly_email()
+        mock_smtp.assert_called_once()
+        sched.bot.logger.info.assert_called()
+
+    def test_logs_error_on_smtp_failure(self):
+        sched = _make_smtp_scheduler({})
+        with patch("smtplib.SMTP", side_effect=ConnectionRefusedError("refused")):
+            sched._send_nightly_email()
+        sched.bot.logger.error.assert_called()

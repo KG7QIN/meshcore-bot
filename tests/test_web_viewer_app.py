@@ -936,3 +936,92 @@ class TestErrorHandler500:
                 assert b'Internal Server Error' in response.data
         finally:
             mock_viewer.app.config['PROPAGATE_EXCEPTIONS'] = True
+
+
+# ---------------------------------------------------------------------------
+# /api/maintenance/status
+# ---------------------------------------------------------------------------
+
+
+class TestApiMaintenanceStatus:
+    def test_returns_all_status_keys(self, viewer_with_db):
+        with viewer_with_db.app.test_client() as client:
+            response = client.get('/api/maintenance/status')
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert 'data_retention_ran_at' in data
+        assert 'nightly_email_ran_at' in data
+        assert 'db_backup_ran_at' in data
+        assert 'log_rotation_applied_at' in data
+
+    def test_empty_string_for_unset_keys(self, viewer_with_db):
+        with viewer_with_db.app.test_client() as client:
+            response = client.get('/api/maintenance/status')
+        data = json.loads(response.data)
+        # Nothing written to DB yet — all values should be empty strings
+        assert all(v == '' for v in data.values())
+
+
+# ---------------------------------------------------------------------------
+# /admin/config
+# ---------------------------------------------------------------------------
+
+
+class TestAdminConfig:
+    def test_page_loads_200(self, viewer_with_db):
+        with viewer_with_db.app.test_client() as client:
+            response = client.get('/admin/config')
+        assert response.status_code == 200
+
+    def test_config_sections_visible(self, viewer_with_db):
+        with viewer_with_db.app.test_client() as client:
+            response = client.get('/admin/config')
+        # The Bot and Web_Viewer sections are in the fixture's config.ini
+        assert b'Bot' in response.data
+        assert b'Web_Viewer' in response.data
+
+    def test_sensitive_values_redacted(self, viewer_with_db):
+        """password fields should show ●●●●●● not the real value."""
+        # Inject a password into the viewer's config
+        viewer_with_db.config.set('Web_Viewer', 'web_viewer_password', 'supersecret')
+        with viewer_with_db.app.test_client() as client:
+            response = client.get('/admin/config')
+        assert b'supersecret' not in response.data
+        assert b'web_viewer_password' in response.data  # key is still shown
+
+
+# ---------------------------------------------------------------------------
+# /api/admin/zombie-recover
+# ---------------------------------------------------------------------------
+
+
+class TestApiZombieRecover:
+    def test_clears_zombie_metadata(self, viewer_with_db):
+        with viewer_with_db.app.test_client() as client:
+            response = client.post(
+                '/api/admin/zombie-recover',
+                headers={'X-Requested-With': 'XMLHttpRequest'},
+            )
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert data['success'] is True
+        # Verify metadata was cleared
+        assert viewer_with_db.db_manager.get_metadata('bot.radio_zombie') == 'false'
+
+
+# ---------------------------------------------------------------------------
+# /api/admin/radio-offline-clear
+# ---------------------------------------------------------------------------
+
+
+class TestApiRadioOfflineClear:
+    def test_clears_radio_offline_metadata(self, viewer_with_db):
+        with viewer_with_db.app.test_client() as client:
+            response = client.post(
+                '/api/admin/radio-offline-clear',
+                headers={'X-Requested-With': 'XMLHttpRequest'},
+            )
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert data['success'] is True
+        assert viewer_with_db.db_manager.get_metadata('bot.radio_offline') == 'false'
