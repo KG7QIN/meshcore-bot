@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 import requests
 
 from ..models import MeshMessage
+from ..security_utils import sanitize_name
 from ..utils import (
     abbreviate_location,
     geocode_city,
@@ -344,7 +345,7 @@ class SolarforecastCommand(BaseCommand):
                 '''
                 all_repeaters = self.bot.db_manager.execute_query(all_repeaters_query)
                 if all_repeaters:
-                    self.logger.debug(f"Sample repeaters in DB: {[r.get('name') for r in all_repeaters[:5]]}")
+                    self.logger.debug(f"Sample repeaters in DB: {[sanitize_name(r.get('name', '')) for r in all_repeaters[:5]]}")
 
             return None, None
         except Exception as e:
@@ -609,7 +610,7 @@ class SolarforecastCommand(BaseCommand):
                 if 'message' in data:
                     msg = data['message']
                     if msg.get('type') != 'success':
-                        self.logger.error(f"Forecast.Solar API error: {msg.get('text', 'Unknown')}")
+                        self.logger.error(f"Forecast.Solar API error: {sanitize_name(msg.get('text', 'Unknown'))}")
                         return None
 
                 result = data.get('result', {})
