@@ -24,3 +24,5 @@ class MeshMessage:
     elapsed: str | None = None
     # When set from RF routing: path_nodes, path_hex, bytes_per_hop, path_length, route_type, etc.
     routing_info: dict[str, Any] | None = None
+    # Flood scope tag matched from TC_FLOOD transport code (set by message_handler)
+    reply_scope: str | None = None
