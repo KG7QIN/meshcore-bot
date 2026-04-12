@@ -70,7 +70,7 @@ class MessageHandler:
 
     @staticmethod
     def _match_scope(transport_code: int, payload_type: int, pkt_payload: bytes,
-                     scope_keys: dict[str, bytes]) -> Optional[str]:
+                     scope_keys: dict[str, bytes]) -> str | None:
         """Return the scope name whose HMAC matches transport_code, or None.
 
         Mirrors the firmware's TransportKey::calcTransportCode: computes
@@ -1900,7 +1900,7 @@ class MessageHandler:
             # Scope matching: if the RF data is a TC_FLOOD, check whether its transport
             # code matches any configured flood_scopes entry. If so, the reply should
             # use the same scope so it reaches the same scoped network segment.
-            reply_scope: Optional[str] = None
+            reply_scope: str | None = None
             if recent_rf_data:
                 rt = recent_rf_data.get("route_type_int")
                 tc_code1 = recent_rf_data.get("transport_code1")

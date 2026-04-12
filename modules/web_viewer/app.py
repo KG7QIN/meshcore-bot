@@ -10,6 +10,7 @@ import logging
 import os
 import re
 import sqlite3
+import subprocess
 import sys
 import threading
 import time
@@ -39,7 +40,6 @@ from modules.security_utils import (
     validate_external_url,
     validate_sql_identifier,
 )
-from modules.version_info import resolve_runtime_version
 
 
 def _apply_werkzeug_websocket_fix() -> None:
